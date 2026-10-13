@@ -11,17 +11,23 @@ class BootReceiver : BroadcastReceiver() {
         context: Context,
         intent: Intent
     ) {
-        if (intent.action != Intent.ACTION_BOOT_COMPLETED) {
+
+        val action = intent.action
+
+        if (
+            action != Intent.ACTION_BOOT_COMPLETED &&
+            action != Intent.ACTION_USER_PRESENT
+        ) {
             return
         }
 
-        Log.i("TeeLinkBoot", "Device boot completed")
+        Log.i("TeeLinkBoot", "Event received: $action")
 
         val launchIntent = context.packageManager
             .getLaunchIntentForPackage(context.packageName)
 
         if (launchIntent == null) {
-            Log.e("TeeLinkBoot", "No launch intent found")
+            Log.e("TeeLinkBoot", "Launch intent unavailable")
             return
         }
 
@@ -33,9 +39,9 @@ class BootReceiver : BroadcastReceiver() {
 
         try {
             context.startActivity(launchIntent)
-            Log.i("TeeLinkBoot", "App launch requested")
+            Log.i("TeeLinkBoot", "App launch requested after: $action")
         } catch (e: Exception) {
-            Log.e("TeeLinkBoot", "Failed to launch app", e)
+            Log.e("TeeLinkBoot", "Launch failed", e)
         }
     }
 }
