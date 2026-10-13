@@ -1,3 +1,24 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-  package="com.example.teelink_activity_launcher">
+    package="com.example.teelink_activity_launcher">
+
+    <!-- Allows the plugin to receive device boot events -->
+    <uses-permission
+        android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <application>
+
+        <!-- Automatically trigger the boot receiver -->
+        <receiver
+            android:name="com.example.teelink_activity_launcher.BootReceiver"
+            android:enabled="true"
+            android:exported="false">
+
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+
+        </receiver>
+
+    </application>
+
 </manifest>
