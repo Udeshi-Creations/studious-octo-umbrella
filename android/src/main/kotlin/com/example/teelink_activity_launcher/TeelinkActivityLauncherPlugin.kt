@@ -1,12 +1,16 @@
+
 package com.example.teelink_activity_launcher
 
 import android.app.ActivityManager
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.net.Uri
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
@@ -18,9 +22,9 @@ class TeelinkActivityLauncherPlugin :
     companion object {
         private const val TAG = "TeeLinkLauncher"
 
-        private const val CHANNEL =
-            "teelink_activity_launcher"
+        private const val CHANNEL = "teelink_activity_launcher"
 
+        // Existing deep-link destination preserved.
         private const val APP_PACKAGE =
             "cloud.teelink.teelinkkiosk"
 
@@ -30,6 +34,13 @@ class TeelinkActivityLauncherPlugin :
 
     private lateinit var channel: MethodChannel
     private lateinit var context: Context
+
+    // Unlock listener
+    private var unlockReceiver: UnlockReceiver? = null
+
+    // =========================================================
+    // PLUGIN INITIALIZATION
+    // =========================================================
 
     override fun onAttachedToEngine(
         binding: FlutterPlugin.FlutterPluginBinding
@@ -43,11 +54,61 @@ class TeelinkActivityLauncherPlugin :
 
         channel.setMethodCallHandler(this)
 
-        Log.d(
-            TAG,
-            "Plugin attached"
-        )
+        Log.d(TAG, "Plugin attached")
+
+        // Register unlock detection.
+        registerUnlockReceiver()
     }
+
+    // =========================================================
+    // UNLOCK RECEIVER REGISTRATION
+    // =========================================================
+
+    private fun registerUnlockReceiver() {
+        if (unlockReceiver != null) {
+            Log.d(TAG, "Unlock receiver already registered")
+            return
+        }
+
+        try {
+            val receiver = UnlockReceiver()
+
+            val filter = IntentFilter().apply {
+                addAction(Intent.ACTION_USER_PRESENT)
+            }
+
+            if (Build.VERSION.SDK_INT >= 33) {
+                context.registerReceiver(
+                    receiver,
+                    filter,
+                    Context.RECEIVER_EXPORTED
+                )
+            } else {
+                context.registerReceiver(
+                    receiver,
+                    filter
+                )
+            }
+
+            unlockReceiver = receiver
+
+            Log.i(
+                TAG,
+                "Unlock receiver registered successfully"
+            )
+
+        } catch (e: Exception) {
+            Log.e(
+                TAG,
+                "Failed to register unlock receiver",
+                e
+            )
+        }
+    }
+
+    // =========================================================
+    // METHOD CHANNEL
+    // =========================================================
 
     override fun onMethodCall(
         call: MethodCall,
@@ -56,8 +117,7 @@ class TeelinkActivityLauncherPlugin :
         when (call.method) {
 
             "openDeepLink" -> {
-                val uri =
-                    call.argument<String>("uri")
+                val uri = call.argument<String>("uri")
 
                 if (uri.isNullOrBlank()) {
                     result.error(
@@ -65,14 +125,10 @@ class TeelinkActivityLauncherPlugin :
                         "URI is missing",
                         null
                     )
-
                     return
                 }
 
-                openDeepLink(
-                    uri,
-                    result
-                )
+                openDeepLink(uri, result)
             }
 
             else -> {
@@ -81,20 +137,20 @@ class TeelinkActivityLauncherPlugin :
         }
     }
 
+    // =========================================================
+    // EXISTING DEEP LINK LAUNCHER
+    // =========================================================
+
     private fun openDeepLink(
         uri: String,
         result: MethodChannel.Result
     ) {
         try {
-            Log.d(
-                TAG,
-                "Requested URI: $uri"
-            )
+            Log.d(TAG, "Requested URI: $uri")
 
-            //
             // STEP 1:
-            // Try to bring our existing task to the front.
-            //
+            // Try to bring an existing task to the front.
+
             val activityManager =
                 context.getSystemService(
                     Context.ACTIVITY_SERVICE
@@ -103,8 +159,7 @@ class TeelinkActivityLauncherPlugin :
             var taskMovedToFront = false
 
             try {
-                val appTasks =
-                    activityManager.appTasks
+                val appTasks = activityManager.appTasks
 
                 Log.d(
                     TAG,
@@ -112,24 +167,17 @@ class TeelinkActivityLauncherPlugin :
                 )
 
                 for (appTask in appTasks) {
-                    val taskInfo =
-                        appTask.taskInfo
-
-                    val baseIntent =
-                        taskInfo.baseIntent
-
-                    val component =
-                        baseIntent.component
+                    val taskInfo = appTask.taskInfo
+                    val baseIntent = taskInfo.baseIntent
+                    val component = baseIntent.component
 
                     Log.d(
                         TAG,
                         "Task ${taskInfo.taskId}: $component"
                     )
 
-                    if (
-                        component?.packageName ==
-                        APP_PACKAGE
-                    ) {
+                    if (component?.packageName == APP_PACKAGE) {
+
                         Log.d(
                             TAG,
                             "Moving task ${taskInfo.taskId} to front"
@@ -141,10 +189,10 @@ class TeelinkActivityLauncherPlugin :
                         )
 
                         taskMovedToFront = true
-
                         break
                     }
                 }
+
             } catch (e: Exception) {
                 Log.e(
                     TAG,
@@ -153,56 +201,41 @@ class TeelinkActivityLauncherPlugin :
                 )
             }
 
-            //
             // STEP 2:
             // Give Android a moment to surface the task.
-            //
+
             Handler(
                 Looper.getMainLooper()
             ).postDelayed({
 
                 try {
-                    //
                     // STEP 3:
-                    // Explicitly deliver the FlutterFlow
-                    // deep-link intent to MainActivity.
-                    //
-                    val intent =
-                        Intent(
-                            Intent.ACTION_VIEW,
-                            Uri.parse(uri)
-                        ).apply {
+                    // Deliver the deep link to MainActivity.
 
-                            setClassName(
-                                APP_PACKAGE,
-                                MAIN_ACTIVITY
-                            )
+                    val intent = Intent(
+                        Intent.ACTION_VIEW,
+                        Uri.parse(uri)
+                    ).apply {
 
-                            addFlags(
-                                Intent.FLAG_ACTIVITY_NEW_TASK
-                            )
+                        setClassName(
+                            APP_PACKAGE,
+                            MAIN_ACTIVITY
+                        )
 
-                            addFlags(
-                                Intent.FLAG_ACTIVITY_SINGLE_TOP
-                            )
-
-                            addFlags(
-                                Intent.FLAG_ACTIVITY_CLEAR_TOP
-                            )
-
-                            addFlags(
-                                Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
-                            )
-                        }
+                        addFlags(
+                            Intent.FLAG_ACTIVITY_NEW_TASK or
+                            Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                            Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                            Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+                        )
+                    }
 
                     Log.d(
                         TAG,
                         "Starting explicit MainActivity"
                     )
 
-                    context.startActivity(
-                        intent
-                    )
+                    context.startActivity(intent)
 
                     Log.d(
                         TAG,
@@ -213,6 +246,7 @@ class TeelinkActivityLauncherPlugin :
                     result.success(true)
 
                 } catch (e: Exception) {
+
                     Log.e(
                         TAG,
                         "Explicit activity launch failed",
@@ -229,11 +263,8 @@ class TeelinkActivityLauncherPlugin :
             }, 150)
 
         } catch (e: Exception) {
-            Log.e(
-                TAG,
-                "openDeepLink failed",
-                e
-            )
+
+            Log.e(TAG, "openDeepLink failed", e)
 
             result.error(
                 "OPEN_FAILED",
@@ -243,14 +274,36 @@ class TeelinkActivityLauncherPlugin :
         }
     }
 
+    // =========================================================
+    // PLUGIN CLEANUP
+    // =========================================================
+
     override fun onDetachedFromEngine(
         binding: FlutterPlugin.FlutterPluginBinding
     ) {
+
+        // Unregister unlock receiver.
+        unlockReceiver?.let { receiver ->
+            try {
+                context.unregisterReceiver(receiver)
+
+                Log.i(
+                    TAG,
+                    "Unlock receiver unregistered"
+                )
+            } catch (e: Exception) {
+                Log.e(
+                    TAG,
+                    "Failed to unregister unlock receiver",
+                    e
+                )
+            }
+        }
+
+        unlockReceiver = null
+
         channel.setMethodCallHandler(null)
 
-        Log.d(
-            TAG,
-            "Plugin detached"
-        )
+        Log.d(TAG, "Plugin detached")
     }
 }
